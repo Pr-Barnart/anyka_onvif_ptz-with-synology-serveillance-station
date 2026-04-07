@@ -1,45 +1,118 @@
-This repository is based on the sd-hack repository from https://github.com/MuhammedKalkan/Anyka-Camera-Firmware.
+# 📷 ANYKA Camera SD Hack with ONVIF + PTZ connected to SDynology Surveillance Station
 
-I wanted my cheap anyka base ip-camera's to connect to my old synology nas (ds412+) serveillance station (ss), but the orginale repo did nt not have onvif with ptz.
+This repository is based on the excellent work from:
+👉 [https://github.com/MuhammedKalkan/Anyka-Camera-Firmware](https://github.com/MuhammedKalkan/Anyka-Camera-Firmware)
 
-For me as a newbie it was the start of a complete journey, finally ending with an working onvif with ptz for my ss synology ;-)
+---
 
-# SD card hack:
-if you have an anyka based ip-camerayou:
-- just copy the factory directory to the sd card.
-- Insert and restart the camera.
+## 🎯 Goal
 
-The hack provides you
-- telnet,
-- ssh,
-- ptzdeamon,
-- rtps-stream on rtps://CAMERA_IP:554/vs0
-- and  also a onvif service with ptz (port8081)
-Logging from the onvif is send to  factopry/custom/log/onvif.log
+I wanted to connect my cheap **ANYKA-based IP cameras** to my old **Synology DS412+ Surveillance Station (SS)**.
 
-# Connecting to SS Synology
-- start serveillance station
-- select ip-camera from the menu
-- select add => add camera
-Add camera:
-  - quick install -> next
-  - name: YOUR  CHOICE
-  - IP_address: CAMERA_IP
-  - Port: 8081
-  - Brand [ONVIF]
-  - Model: all functions
-  - UserName: blank
-  - Password: blank
+The original repository provides a great SD-card hack, but it **does not include ONVIF with PTZ support**, which is required for full integration with Surveillance Station.
 
-- click test connection: if OK -> next
-- click complete.
+As a beginner, this turned into quite a journey — but I finally ended up with a **working ONVIF implementation including PTZ**, fully compatible with Synology 🎉
 
-From https://github.com/MuhammedKalkan/Anyka-Camera-Firmware the only changes I made:
-- new config.sh in factory
-- add anyka_onvif_ptz to custom
-- add ss.jpg to custom ( snapshot dummy)
-- create custom/log for logging
-- deleted custom/onvif
+---
 
-# More info about the hack itself and how to overwrite Camera software
-see https://github.com/MuhammedKalkan/Anyka-Camera-Firmware
+## 💾 SD Card Hack
+
+If you have an ANYKA-based IP camera, setup is simple:
+
+### Installation
+
+1. Copy the `factory` directory to an SD card
+2. Insert the SD card into the camera
+3. Restart the camera
+
+---
+
+## ⚙️ Features Provided by the Hack
+
+After boot, the camera provides:
+
+* ✅ Telnet access
+* ✅ SSH access
+* ✅ PTZ daemon (`ptzdaemon`)
+* ✅ RTSP stream
+
+  ```
+  rtsp://CAMERA_IP:554/vs0
+  ```
+* ✅ **ONVIF service with PTZ support**
+
+  ```
+  http://CAMERA_IP:8081
+  ```
+
+### 📝 Logging
+
+ONVIF logs are written to:
+
+```id="w36dn4"
+factory/custom/log/onvif.log
+```
+
+---
+
+## 📺 Connecting to Synology Surveillance Station
+
+1. Open **Surveillance Station**
+2. Go to **IP Camera**
+3. Click **Add → Add Camera**
+
+### Configuration
+
+| Setting      | Value         |
+| ------------ | ------------- |
+| Install Type | Quick Install |
+| Name         | Your choice   |
+| IP Address   | CAMERA_IP     |
+| Port         | 8081          |
+| Brand        | ONVIF         |
+| Model        | All Functions |
+| Username     | *(empty)*     |
+| Password     | *(empty)*     |
+
+### Steps
+
+* Click **Test Connection**
+* If successful → **Next**
+* Click **Complete**
+
+---
+
+## 🔧 Changes Compared to Original Repository
+
+From the original project, I made the following modifications:
+
+* ➕ Added new `config.sh` in `factory`
+* ➕ Added `anyka_onvif_ptz` to `custom`
+* ➕ Added `ss.jpg` (dummy snapshot for Surveillance Station)
+* ➕ Created `custom/log` directory for logging
+* ❌ Removed `custom/onvif`
+
+---
+
+## 📚 More Information
+
+For full details about:
+
+* the SD hack
+* firmware behavior
+* flashing / overriding camera software
+
+See the original repository:
+
+👉 [https://github.com/MuhammedKalkan/Anyka-Camera-Firmware](https://github.com/MuhammedKalkan/Anyka-Camera-Firmware)
+
+---
+
+## ✅ Result
+
+With these changes, cheap ANYKA cameras can now:
+
+* integrate with Synology Surveillance Station
+* support ONVIF properly (for SS only) 
+* provide PTZ control
+---
