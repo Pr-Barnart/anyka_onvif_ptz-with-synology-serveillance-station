@@ -59,7 +59,7 @@
 #define UUID_STR            "316d4de6-a7b4-438b-8374-aabbccddeeff"
 
 /* Snapshot path */
-#define SNAPSHOT_PATH "/mnt/Factory/custom/snapshot.jpg"
+#define SNAPSHOT_PATH "/mnt/Factory/custom/ss.jpg"
 
 /* ===================== GLOBALS ===================== */
 static char camera_ip[64] = CAMERA_IP_FALLBACK;
