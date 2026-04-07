@@ -2,7 +2,7 @@ This repository is based on the sd-hack repository from https://github.com/Muham
 
 I wanted my cheap anyka base ip-camera's to connect to my old synology nas (ds412+) serveillance station (ss), but the orginale repo did nt not have onvif with ptz.
 
-For me as a newbie it was the start of a complete journe y en ding with an working onvif with ptz for my ss synology.
+For me as a newbie it was the start of a complete journey, finally ending with an working onvif with ptz for my ss synology ;-)
 
 # SD card hack:
 if you have an anyka based ip-camerayou:
