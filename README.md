@@ -1,6 +1,6 @@
-This repository is based on the sd- hack repository from https://github.com/MuhammedKalkan/Anyka-Camera-Firmware.
+This repository is based on the sd-hack repository from https://github.com/MuhammedKalkan/Anyka-Camera-Firmware.
 
-I wanted them to connect to my old synology nas (ds412+) serveillance station (ss), but the orginale repo did nt not have onvif with ptz.
+I wanted my cheap anyka base ip-camera's to connect to my old synology nas (ds412+) serveillance station (ss), but the orginale repo did nt not have onvif with ptz.
 
 For me as a newbie it was the start of a complete journe y en ding with an working onvif with ptz for my ss synology.
 
