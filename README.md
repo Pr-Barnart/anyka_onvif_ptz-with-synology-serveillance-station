@@ -3,6 +3,8 @@
 This repository is based on the excellent work from:
 👉 [https://github.com/MuhammedKalkan/Anyka-Camera-Firmware](https://github.com/MuhammedKalkan/Anyka-Camera-Firmware)
 
+This repo is not a full ONVIF implementation; it only includes what is necessary for SS and Anyka.
+
 ---
 
 ## 🎯 Goal
@@ -113,6 +115,8 @@ See the original repository:
 * Onvif Device Manager miration vs-2022
   
 👉 [https://github.com/Pr-Barnart/Onvif-Device-Manager-ODM-vs2022-framework-4.8)](https://github.com/Pr-Barnart/Onvif-Device-Manager-ODM-vs2022-framework-4.8)
+
+This repo is not a full ONVIF implementation; it only includes what is necessary for SS and Anyka.
 
 ---
 
