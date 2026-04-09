@@ -15,6 +15,8 @@ The original repository provides a great SD-card hack, but it **does not include
 
 As a beginner, this turned into quite a journey — but I finally ended up with a **working ONVIF implementation including PTZ**, fully compatible with Synology 🎉
 
+See my_journey.mw (https://github.com/Pr-Barnart/anyka_onvif_ptz-with-synology-serveillance-station/blob/main/MY_JOURNEY.MD)
+
 ---
 
 ## 💾 SD Card Hack
