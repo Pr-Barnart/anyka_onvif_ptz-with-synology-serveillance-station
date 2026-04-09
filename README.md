@@ -106,8 +106,9 @@ See the original repository:
 
 👉 [https://github.com/MuhammedKalkan/Anyka-Camera-Firmware](https://github.com/MuhammedKalkan/Anyka-Camera-Firmware)
 
-* Anyka onvif ptz on raspberry-pi proxy 
-👉
+* Anyka onvif ptz on raspberry-pi proxy
+  
+👉 [[https://github.com/MuhammedKalkan/Anyka-Camera-Firmware]([https://github.com/Pr-Barnart/Anyka-onvif-proxy-Raspberry]
 
 * Onvif Device Manager miration vs-2022
   
