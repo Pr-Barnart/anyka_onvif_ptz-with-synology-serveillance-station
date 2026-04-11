@@ -13,7 +13,13 @@ For building:
 
 arm-anykav200-linux-uclibcgnueabi-gcc anyka_onvif_ptz.c \
  -std=c99 -D_GNU_SOURCE \
- -DVERSION="\"v2.0.0\"" \
+ -DVERSION="\"v2.3.0\"" \
  -lpthread -o anyka_onvif_ptz
+
+v.2.3
+- reverse ptz (swap lef/right/uip/down)
+- modified broadcast ws discovery
+- log file maintenance every 12 hour, if greater then 300 kb, trim forst 300 lines,  mutex_lock
+ 
 
   
