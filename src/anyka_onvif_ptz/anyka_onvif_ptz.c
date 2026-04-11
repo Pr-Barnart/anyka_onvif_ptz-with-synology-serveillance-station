@@ -1,11 +1,13 @@
 /*
- * v 2.1.0 
+ * v 2.3.0
  * Standalone ONVIF Server with PTZ for Anyka cameras
  * Replaces libonvif dependency — pure C, no external ONVIF libs needed
  *
  * Compile with Anyka toolchain:
- *   arm-anykav200-linux-uclibcgnueabi-gcc anyka_onvif_ptz.c \
- *     -std=c99 -D_GNU_SOURCE -lpthread -o anyka_onvif_ptz
+ *  arm-anykav200-linux-uclibcgnueabi-gcc anyka_onvif_ptz.c \
+    -std=c99 -D_GNU_SOURCE \
+   -DVERSION="\"v2.3.0\"" \
+   -lpthread -o anyka_onvif_ptz
  *
  * Or for testing on Linux x86:
  *   gcc anyka_onvif_ptz.c -std=c99 -D_GNU_SOURCE -lpthread -o anyka_onvif_ptz
@@ -30,24 +32,28 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <ifaddrs.h>
+#include <sys/stat.h>
+#include <stdarg.h>
+
+pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* ===================== CONFIG ===================== */
 #define ONVIF_PORT          8081          /* ONVIF HTTP port on camera */
 #define DISCOVERY_PORT      3702        /* WS-Discovery UDP port */
 #define DISCOVERY_ADDR      "239.255.255.250"
-#define CAMERA_IP_FALLBACK  "192.168.0.81"
+#define CAMERA_IP_FALLBACK  "192.168.0.80"
 #define RTSP_PATH           "/vs0"
 #define RTSP_PORT           554
 
 /* PTZ commands — match your camera's webui */
-#define PTZ_CMD_LEFT        "ptzl"
-#define PTZ_CMD_RIGHT       "ptzr"
-#define PTZ_CMD_UP          "ptzu"
-#define PTZ_CMD_DOWN        "ptzd"
-#define PTZ_CMD_LEFT_UP     "ptzlu"
-#define PTZ_CMD_RIGHT_UP    "ptzru"
-#define PTZ_CMD_LEFT_DOWN   "ptzld"
-#define PTZ_CMD_RIGHT_DOWN  "ptzrd"
+#define PTZ_CMD_LEFT        "ptzr"
+#define PTZ_CMD_RIGHT       "ptzl"
+#define PTZ_CMD_UP          "ptzd"
+#define PTZ_CMD_DOWN        "ptzu"
+#define PTZ_CMD_LEFT_UP     "ptzrd"
+#define PTZ_CMD_RIGHT_UP    "ptzld"
+#define PTZ_CMD_LEFT_DOWN   "ptzru"
+#define PTZ_CMD_RIGHT_DOWN  "ptzlu"
 
 /* Webui base URL for PTZ — adjust port if needed */
 #define PTZ_WEBUI_PORT      8080
@@ -59,7 +65,7 @@
 #define UUID_STR            "316d4de6-a7b4-438b-8374-aabbccddeeff"
 
 /* Snapshot path */
-#define SNAPSHOT_PATH "/mnt/Factory/custom/ss.jpg"
+#define SNAPSHOT_PATH "/mnt/Factory/custom/snapshot.jpg"
 
 /* ===================== GLOBALS ===================== */
 static char camera_ip[64] = CAMERA_IP_FALLBACK;
@@ -72,6 +78,15 @@ static int  active_profile_fixed     = 1;   // default profile
 static int profile_has_video_source = 1;
 static int profile_has_video_encoder = 1;
 static int profile_has_ptz = 1;
+
+
+/*==================== PREDIFINE FUNCTIONS ==================== = */
+
+void log_printf(const char* fmt, ...);
+int file_too_big(const char* filename);
+void safe_trim_log(void);
+void trim_log(const char* filename);
+void* log_maintenance_thread(void* arg);
 /* ===================== UTILS ===================== */
 
 /* Get local IP of wlan0 or eth0 */
@@ -125,7 +140,7 @@ static int str_contains(const char *haystack, const char *needle)
     char wget_cmd[512];
     snprintf(url, sizeof(url), PTZ_WEBUI_CMD, PTZ_WEBUI_PORT, cmd);
     snprintf(wget_cmd, sizeof(wget_cmd), "wget -q -O /dev/null '%s' &", url);
-    printf("[PTZ] %s\n", url);
+    log_printf("[PTZ] %s\n", url);
     fflush(stdout);
     system(wget_cmd);
 }
@@ -134,7 +149,7 @@ static void ptz_execute(const char* cmd)
 {
     char syscmd[512];
 
-    printf("[PTZ] direct webui command=%s\n", cmd);
+    log_printf("[PTZ] direct webui command=%s\n", cmd);
     fflush(stdout);
 
     snprintf(syscmd, sizeof(syscmd),
@@ -151,7 +166,7 @@ static void parse_and_execute_ptz(const char *xml)
     float x = 0.0f, y = 0.0f;
     const char *px = strstr(xml, "PanTilt");
     if (!px) {
-        printf("[PTZ] No PanTilt found\n");
+        log_printf("[PTZ] No PanTilt found\n");
         return;
     }
 
@@ -160,7 +175,7 @@ static void parse_and_execute_ptz(const char *xml)
     if (xattr) x = atof(xattr + 3);
     if (yattr) y = atof(yattr + 3);
 
-    printf("[PTZ] x=%.2f y=%.2f\n", x, y);
+    log_printf("[PTZ] x=%.2f y=%.2f\n", x, y);
 
     if      (x < 0 && y > 0) ptz_execute(PTZ_CMD_LEFT_UP);
     else if (x > 0 && y > 0) ptz_execute(PTZ_CMD_RIGHT_UP);
@@ -170,7 +185,7 @@ static void parse_and_execute_ptz(const char *xml)
     else if (x > 0)           ptz_execute(PTZ_CMD_RIGHT);
     else if (y > 0)           ptz_execute(PTZ_CMD_UP);
     else if (y < 0)           ptz_execute(PTZ_CMD_DOWN);
-    else printf("[PTZ] x=0 y=0, no movement\n");
+    else log_printf("[PTZ] x=0 y=0, no movement\n");
 }
 
 /* ===================== SOAP RESPONSES ===================== */
@@ -402,7 +417,7 @@ static void handle_GetNetworkInterfaces(int fd)
 }
 static void handle_GetProfiles(int fd)
 {
-    printf("[ONVIF] handle_GetProfiles token=%s name=%s fixed=%d\n",
+    log_printf("[ONVIF] handle_GetProfiles token=%s name=%s fixed=%d\n",
            active_profile_token, active_profile_name, active_profile_fixed);
 
     send_profile_element_response(fd,
@@ -416,7 +431,7 @@ static void handle_GetProfiles(int fd)
 static void handle_GetStreamUri(int fd)
 {
     char body[1024];
-    printf("[ONVIF] handle_GetStreamUri called\n");
+    log_printf("[ONVIF] handle_GetStreamUri called\n");
     snprintf(body, sizeof(body),
         "<trt:GetStreamUriResponse>"
         "<trt:MediaUri>"
@@ -759,7 +774,7 @@ static void handle_CreateProfile(int fd, const char *xml)
     profile_has_video_source = 0;
     profile_has_video_encoder = 0;
     profile_has_ptz = 0;
-    printf("[ONVIF] CreateProfile -> token=%s name=%s\n",
+    log_printf("[ONVIF] CreateProfile -> token=%s name=%s\n",
            active_profile_token, active_profile_name);
 
     send_profile_element_response(fd,
@@ -851,9 +866,9 @@ static void log_request_name(const char *xml)
     else if (xml_has_op(xml, "GetConfigurations")) name = "GetConfigurations";
 
     if (name) {
-        printf("[ONVIF] %s\n", name);
+        log_printf("[ONVIF] %s\n", name);
     } else {
-        printf("[ONVIF] UNHANDLED FULL START:\n%.500s\n", xml);
+        log_printf("[ONVIF] UNHANDLED FULL START:\n%.500s\n", xml);
     }
     fflush(stdout);
 }
@@ -949,7 +964,7 @@ static void handle_request(int fd, const char *xml)
         handle_GetVideoEncoderConfigurations(fd);
 
     } else if (xml_has_op(xml, "CreateProfile")) {
-        printf("[ONVIF] CreateProfile XML: %.200s\n", xml);
+        log_printf("[ONVIF] CreateProfile XML: %.200s\n", xml);
         fflush(stdout);
         handle_CreateProfile(fd, xml);
 
@@ -962,12 +977,12 @@ static void handle_request(int fd, const char *xml)
         profile_has_video_encoder = 1;
         profile_has_ptz = 1;
 
-        printf("[ONVIF] DeleteProfile -> reset default\n");
+        log_printf("[ONVIF] DeleteProfile -> reset default\n");
         fflush(stdout);
         handle_ok(fd, "trt:DeleteProfileResponse");
 
     } else if (xml_has_op(xml, "GetProfile") && !xml_has_op(xml, "GetProfiles")) {
-        printf("[ONVIF] GetProfile token=%s name=%s fixed=%d\n",
+        log_printf("[ONVIF] GetProfile token=%s name=%s fixed=%d\n",
                active_profile_token, active_profile_name, active_profile_fixed);
         fflush(stdout);
 
@@ -989,19 +1004,19 @@ static void handle_request(int fd, const char *xml)
 
     } else if (xml_has_op(xml, "AddVideoSourceConfiguration")) {
         profile_has_video_source = 1;
-        printf("[ONVIF] AddVideoSourceConfiguration\n");
+        log_printf("[ONVIF] AddVideoSourceConfiguration\n");
         fflush(stdout);
         handle_ok(fd, "trt:AddVideoSourceConfigurationResponse");
 
     } else if (xml_has_op(xml, "AddVideoEncoderConfiguration")) {
         profile_has_video_encoder = 1;
-        printf("[ONVIF] AddVideoEncoderConfiguration\n");
+        log_printf("[ONVIF] AddVideoEncoderConfiguration\n");
         fflush(stdout);
         handle_ok(fd, "trt:AddVideoEncoderConfigurationResponse");
 
     } else if (xml_has_op(xml, "AddPTZConfiguration")) {
         profile_has_ptz = 1;
-        printf("[ONVIF] AddPTZConfiguration\n");
+        log_printf("[ONVIF] AddPTZConfiguration\n");
         fflush(stdout);
         handle_ok(fd, "trt:AddPTZConfigurationResponse");
 
@@ -1017,7 +1032,7 @@ static void handle_request(int fd, const char *xml)
 
     /* Fallback */
     } else {
-        printf("[ONVIF] UNHANDLED FULL START:\n%.500s\n", xml);
+        log_printf("[ONVIF] UNHANDLED FULL START:\n%.500s\n", xml);
         fflush(stdout);
         send_soap(fd,
             "<s:Fault>"
@@ -1130,7 +1145,7 @@ static void *http_server_thread(void *arg)
         return NULL;
     }
 
-    printf("[ONVIF] HTTP server listening on port %d\n", port);
+    log_printf("[ONVIF] HTTP server listening on port %d\n", port);
     fflush(stdout);
     while (server_running) {
         fd_set fds;
@@ -1159,33 +1174,68 @@ static void *http_server_thread(void *arg)
 }
 
 /* ===================== WS-DISCOVERY ===================== */
+static int extract_tag_value(const char* xml, const char* tag, char* out, size_t out_sz)
+{
+    const char* p = strstr(xml, tag);
+    if (!p) return 0;
 
-static void *discovery_thread(void *arg)
+    p = strchr(p, '>');
+    if (!p) return 0;
+    p++;
+
+    const char* e = strchr(p, '<');
+    if (!e) return 0;
+
+    size_t len = (size_t)(e - p);
+    if (len >= out_sz) len = out_sz - 1;
+
+    memcpy(out, p, len);
+    out[len] = '\0';
+    return 1;
+}
+
+static void make_message_id(char* out, size_t out_sz)
+{
+    /* Better: generate a real UUID.
+       For now, if UUID_STR is already a valid UUID, this is acceptable. */
+    snprintf(out, out_sz, "uuid:%s", UUID_STR);
+}
+
+static void* discovery_thread(void* arg)
 {
     int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (fd < 0) { perror("discovery socket"); return NULL; }
+    if (fd < 0) {
+        perror("discovery socket");
+        return NULL;
+    }
 
     int opt = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct sockaddr_in addr = {0};
+    struct sockaddr_in addr = { 0 };
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(DISCOVERY_PORT);
 
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("discovery bind");
         close(fd);
         return NULL;
     }
 
-    struct ip_mreq mreq = {0};
+    struct ip_mreq mreq = { 0 };
     inet_aton(DISCOVERY_ADDR, &mreq.imr_multiaddr);
     mreq.imr_interface.s_addr = INADDR_ANY;
-    setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
 
-    printf("[DISCOVERY] WS-Discovery listening on UDP %d\n", DISCOVERY_PORT);
+    if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        perror("IP_ADD_MEMBERSHIP");
+        close(fd);
+        return NULL;
+    }
+
+    log_printf("[DISCOVERY] WS-Discovery listening on UDP %d\n", DISCOVERY_PORT);
     fflush(stdout);
+
     char buf[BUF_SIZE];
     char reply[BUF_SIZE];
 
@@ -1193,59 +1243,66 @@ static void *discovery_thread(void *arg)
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(fd, &fds);
-        struct timeval tv = {1, 0};
+
+        struct timeval tv = { 1, 0 };
         int sel = select(fd + 1, &fds, NULL, NULL, &tv);
         if (sel <= 0) continue;
 
         struct sockaddr_in from;
         socklen_t from_len = sizeof(from);
-        int n = recvfrom(fd, buf, BUF_SIZE - 1, 0,
-                         (struct sockaddr *)&from, &from_len);
+        int n = recvfrom(fd, buf, sizeof(buf) - 1, 0,
+            (struct sockaddr*)&from, &from_len);
         if (n <= 0) continue;
-        buf[n] = 0;
+        buf[n] = '\0';
 
-        if (!str_contains(buf, "Probe")) continue;
+        log_printf("[DISCOVERY] received from %s:%d\n",
+            inet_ntoa(from.sin_addr), ntohs(from.sin_port));
+        log_printf("%s\n", buf);
+        fflush(stdout);
 
-        /* Extract MessageID */
-        char msg_id[128] = "unknown";
-        const char *mid = strstr(buf, "MessageID>");
-        if (mid) {
-            mid += 10;
-            const char *end = strstr(mid, "<");
-            if (end && (end - mid) < 120) {
-                strncpy(msg_id, mid, end - mid);
-                msg_id[end - mid] = 0;
-                /* Strip urn:uuid: prefix */
-                char *uuid_part = strstr(msg_id, "uuid:");
-                if (uuid_part) memmove(msg_id, uuid_part + 5, strlen(uuid_part + 5) + 1);
-            }
+        if (!strstr(buf, "http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe"))
+            continue;
+
+        if (!strstr(buf, "NetworkVideoTransmitter"))
+            continue;
+
+        char msg_id[256] = "";
+        if (!extract_tag_value(buf, "MessageID", msg_id, sizeof(msg_id))) {
+            strcpy(msg_id, "");
         }
 
-        snprintf(reply, sizeof(reply),
+        char response_mid[128];
+        make_message_id(response_mid, sizeof(response_mid));
+
+        int len = snprintf(reply, sizeof(reply),
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-            "<s:Envelope"
-            " xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\""
-            " xmlns:a=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\""
-            " xmlns:d=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\""
-            " xmlns:dn=\"http://www.onvif.org/ver10/network/wsdl\">"
+            "<s:Envelope "
+            "xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" "
+            "xmlns:a=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\" "
+            "xmlns:d=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\" "
+            "xmlns:dn=\"http://www.onvif.org/ver10/network/wsdl\">"
             "<s:Header>"
-            "<a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</a:Action>"
-            "<a:MessageID>urn:uuid:%s-reply</a:MessageID>"
+            "<a:Action s:mustUnderstand=\"1\">"
+            "http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches"
+            "</a:Action>"
+            "<a:MessageID>%s</a:MessageID>"
             "<a:RelatesTo>%s</a:RelatesTo>"
-            "<a:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To>"
+            "<a:To s:mustUnderstand=\"1\">"
+            "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous"
+            "</a:To>"
             "</s:Header>"
             "<s:Body>"
             "<d:ProbeMatches>"
             "<d:ProbeMatch>"
             "<a:EndpointReference>"
-            "<a:Address>urn:uuid:%s</a:Address>"
+            "<a:Address>uuid:%s</a:Address>"
             "</a:EndpointReference>"
             "<d:Types>dn:NetworkVideoTransmitter</d:Types>"
             "<d:Scopes>"
             "onvif://www.onvif.org/name/AnykaCamera "
+            "onvif://www.onvif.org/Profile/Streaming "
             "onvif://www.onvif.org/type/video_encoder "
             "onvif://www.onvif.org/type/ptz "
-            "onvif://www.onvif.org/Profile/Streaming "
             "onvif://www.onvif.org/manufacturer/Anyka"
             "</d:Scopes>"
             "<d:XAddrs>http://%s:%d/onvif/device_service</d:XAddrs>"
@@ -1254,19 +1311,98 @@ static void *discovery_thread(void *arg)
             "</d:ProbeMatches>"
             "</s:Body>"
             "</s:Envelope>",
-            UUID_STR, msg_id, UUID_STR,
-            camera_ip, ONVIF_PORT);
+            response_mid,
+            msg_id,
+            UUID_STR,
+            camera_ip,
+            ONVIF_PORT);
 
-        sendto(fd, reply, strlen(reply), 0,
-               (struct sockaddr *)&from, from_len);
-        printf("[DISCOVERY] Sent ProbeMatch to %s\n", inet_ntoa(from.sin_addr));
-        fflush(stdout);
+        if (len > 0) {
+            sendto(fd, reply, (size_t)len, 0,
+                (struct sockaddr*)&from, from_len);
+            log_printf("[DISCOVERY] Sent ProbeMatch to %s:%d\n",
+                inet_ntoa(from.sin_addr), ntohs(from.sin_port));
+            fflush(stdout);
+        }
     }
 
     close(fd);
     return NULL;
 }
+/*----*/
 
+void* log_maintenance_thread(void* arg)
+{
+    while (server_running) {
+        sleep(43200);  // check every 12 uur (adjust as needed)
+        if (file_too_big("/mnt/Factory/custom/log/onvif.log")) {
+            safe_trim_log();
+        }
+    }
+    return NULL;
+}
+
+int file_too_big(const char* filename)
+{
+    struct stat st;
+    if (stat(filename, &st) != 0) return 0;
+
+    return (st.st_size > 300 * 1024);  // 
+}
+
+
+void safe_trim_log()
+{
+    pthread_mutex_lock(&log_mutex);
+    trim_log("/mnt/Factory/custom/log/onvif.log");
+    pthread_mutex_unlock(&log_mutex);
+}
+
+#define TRIM_LINES 3000
+
+void trim_log(const char* filename)
+{
+    FILE* fp = fopen(filename, "r");
+    if (!fp) return;
+
+    char line[512];
+    
+
+    FILE* tmp = fopen("temp.log", "w");
+    if (!tmp) {
+        fclose(fp);
+        return;
+    }
+
+    int current = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        current++;
+        if (current > TRIM_LINES) {
+            fputs(line, tmp);
+        }
+    }
+
+    fclose(fp);
+    fclose(tmp);
+
+    remove(filename);
+    rename("temp.log", filename);
+}
+
+void log_printf(const char* fmt, ...)
+{
+    pthread_mutex_lock(&log_mutex);
+
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+
+    fflush(stdout);  // important when redirected to file
+
+    pthread_mutex_unlock(&log_mutex);
+}
 /* ===================== MAIN ===================== */
 
 int main(int argc, char *argv[])
@@ -1274,19 +1410,19 @@ int main(int argc, char *argv[])
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
-    printf("[ONVIF] main started\n");
+    log_printf("[ONVIF] new main started\n");
     fflush(stdout);
 
     signal(SIGPIPE, SIG_IGN);
 
     /* Get local IP */
     get_local_ip(camera_ip, sizeof(camera_ip));
-    printf("[ONVIF] Version: %s (%s %s)\n", VERSION, __DATE__, __TIME__);
-    printf("[ONVIF] Camera IP: %s\n", camera_ip);
+    log_printf("[ONVIF] using Version: %s (%s %s)\n", VERSION, __DATE__, __TIME__);
+    log_printf("[ONVIF] Camera IP: %s\n", camera_ip);
     fflush(stdout);
-    printf("[ONVIF] RTSP: rtsp://%s:%d%s\n", camera_ip, RTSP_PORT, RTSP_PATH);
+    log_printf("[ONVIF] RTSP: rtsp://%s:%d%s\n", camera_ip, RTSP_PORT, RTSP_PATH);
     fflush(stdout);
-    printf("[ONVIF] PTZ webui: http://127.0.0.1:%d/cgi-bin/webui?command=ptzX\n",
+    log_printf("[ONVIF] PTZ webui: http://127.0.0.1:%d/cgi-bin/webui?command=ptzX\n",
            PTZ_WEBUI_PORT);
     fflush(stdout);
 
@@ -1294,6 +1430,11 @@ int main(int argc, char *argv[])
     pthread_t disc_tid;
     pthread_create(&disc_tid, NULL, discovery_thread, NULL);
     pthread_detach(disc_tid);
+
+    /* start mainteancethread log file*/
+    pthread_t log_tid;
+    pthread_create(&log_tid, NULL, log_maintenance_thread, NULL);
+    pthread_detach(log_tid);
 
     /* Start HTTP server — blocks here */
     http_server_thread((void *)(intptr_t)ONVIF_PORT);
